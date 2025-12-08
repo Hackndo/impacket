@@ -44,7 +44,7 @@ from impacket.dcerpc.v5.dcom import wmi
 from impacket.dcerpc.v5.dtypes import NULL
 from impacket.krb5.keytab import Keytab
 
-OUTPUT_FILENAME = '__' + str(time.time())
+OUTPUT_FILENAME = 'output_' + str(time.time())
 CODEC = sys.stdout.encoding
 
 
@@ -126,7 +126,7 @@ class RemoteShell(cmd.Cmd):
         self.__share = share
         self.__output = '\\' + OUTPUT_FILENAME
         self.__outputBuffer = str('')
-        self.__shell = 'cmd.exe /Q /c '
+        self.__shell = 'cmd.exe /Q /c, '
         self.__shell_type = shell_type
         self.__pwsh = 'powershell.exe -NoP -NoL -sta -NonI -W Hidden -Exec Bypass -Enc '
         self.__win32Process = win32Process
