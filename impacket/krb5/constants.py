@@ -1,6 +1,8 @@
 # Impacket - Collection of Python classes for working with network protocols.
 #
-# Copyright (C) 2023 Fortra. All rights reserved.
+# Copyright Fortra, LLC and its affiliated companies 
+#
+# All rights reserved.
 #
 # This software is provided under a slightly modified version
 # of the Apache Software License. See the accompanying LICENSE file
@@ -102,6 +104,7 @@ class PreAuthenticationDataTypes(Enum):
     TD_REQ_SEQ                 = 108
     PA_PAC_REQUEST             = 128
     PA_FOR_USER                = 129
+    PA_S4U_X509_USER           = 130
     PA_FX_COOKIE               = 133 
     PA_FX_FAST                 = 136
     PA_FX_ERROR                = 137
@@ -110,6 +113,8 @@ class PreAuthenticationDataTypes(Enum):
     KERB_KEY_LIST_REP          = 162
     PA_SUPPORTED_ENCTYPES      = 165
     PA_PAC_OPTIONS             = 167
+    KERB_SUPERSEDED_BY_USER    = 170
+    KERB_DMSA_KEY_PACKAGE      = 171
 
 class AddressType(Enum):
     IPv4            = 2

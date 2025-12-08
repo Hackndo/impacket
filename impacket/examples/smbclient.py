@@ -1,6 +1,8 @@
 # Impacket - Collection of Python classes for working with network protocols.
 #
-# Copyright (C) 2023 Fortra. All rights reserved.
+# Copyright Fortra, LLC and its affiliated companies 
+#
+# All rights reserved.
 #
 # This software is provided under a slightly modified version
 # of the Apache Software License. See the accompanying LICENSE file
@@ -29,17 +31,11 @@ from impacket.dcerpc.v5 import samr, transport, srvs
 from impacket.dcerpc.v5.dtypes import NULL
 from impacket import LOG
 from impacket.smbconnection import SMBConnection, SMB2_DIALECT_002, SMB2_DIALECT_21, SMB_DIALECT, SessionError, \
-    FILE_READ_DATA, FILE_SHARE_READ, FILE_SHARE_WRITE
+    FILE_READ_DATA, FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_SHARE_DELETE
 from impacket.smb3structs import FILE_DIRECTORY_FILE, FILE_LIST_DIRECTORY
 
 import charset_normalizer as chardet
 
-
-# If you wanna have readline like functionality in Windows, install pyreadline
-try:
-  import pyreadline as readline
-except ImportError:
-  import readline
 
 class MiniImpacketShell(cmd.Cmd):
     def __init__(self, smbClient, tcpShell=None, outputfile=None):
@@ -105,6 +101,7 @@ class MiniImpacketShell(cmd.Cmd):
     def do_help(self,line):
         print("""
  open {host,port=445} - opens a SMB connection against the target host/port
+ reconnect - reconnect connection, useful for broken pipes & interrupted sessions
  login {domain/username,passwd} - logs into the current SMB connection, no parameters for NULL connection. If no password specified, it'll be prompted
  kerberos_login {domain/username,passwd} - logs into the current SMB connection using Kerberos. If no password specified, it'll be prompted. Use the DNS resolvable domain name
  login_hash {domain/username,lmhash:nthash} - logs into the current SMB connection using the password hashes
@@ -183,6 +180,12 @@ class MiniImpacketShell(cmd.Cmd):
         self.nthash = None
         self.username = None
 
+    def do_reconnect(self, line):
+        if self.smb:
+            self.smb.reconnect()
+        else:
+            LOG.warning("Not reconnecting a closed connection.")
+    
     def do_login(self,line):
         if self.smb is None:
             LOG.error("No connection open")
@@ -563,7 +566,7 @@ class MiniImpacketShell(cmd.Cmd):
                 pathname = ntpath.join(self.pwd, filename)
                 try:
                     LOG.info("Downloading %s" % (filename))
-                    self.smb.getFile(self.share, pathname, fh.write)
+                    self.smb.getFileEx(self.share, pathname, fh.write)
                 except:
                     fh.close()
                     os.remove(filename)
@@ -578,13 +581,16 @@ class MiniImpacketShell(cmd.Cmd):
         fh = open(ntpath.basename(filename),'wb')
         pathname = ntpath.join(self.pwd,filename)
         try:
-            self.smb.getFile(self.share, pathname, fh.write)
+            self.smb.getFileEx(self.share, pathname, fh.write)
         except:
             fh.close()
             os.remove(filename)
             raise
         fh.close()
 
+    def complete_cat(self, text, line, begidx, endidx):
+        return self.complete_get(text, line, begidx, endidx, include=1)
+    
     def do_cat(self, filename):
         if self.tid is None:
             LOG.error("No share selected")
@@ -593,7 +599,7 @@ class MiniImpacketShell(cmd.Cmd):
         fh = BytesIO()
         pathname = ntpath.join(self.pwd,filename)
         try:
-            self.smb.getFile(self.share, pathname, fh.write)
+            self.smb.getFileEx(self.share, pathname, fh.write)
         except:
             raise
         output = fh.getvalue()
@@ -615,7 +621,7 @@ class MiniImpacketShell(cmd.Cmd):
             finally:
                 fh.close()
         else:
-            if self.outpufile:
+            if self.outputfile:
                 f.write(error_msg + '\n')
                 f.close()
             print(error_msg)

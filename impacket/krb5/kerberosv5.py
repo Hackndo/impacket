@@ -1,6 +1,8 @@
 # Impacket - Collection of Python classes for working with network protocols.
 #
-# Copyright (C) 2023 Fortra. All rights reserved.
+# Copyright Fortra, LLC and its affiliated companies 
+#
+# All rights reserved.
 #
 # This software is provided under a slightly modified version
 # of the Apache Software License. See the accompanying LICENSE file
@@ -29,7 +31,7 @@ from binascii import unhexlify, hexlify
 
 from impacket.krb5.asn1 import AS_REQ, AP_REQ, TGS_REQ, KERB_PA_PAC_REQUEST, KRB_ERROR, PA_ENC_TS_ENC, AS_REP, TGS_REP, \
     EncryptedData, Authenticator, EncASRepPart, EncTGSRepPart, seq_set, seq_set_iter, KERB_ERROR_DATA, METHOD_DATA, \
-    ETYPE_INFO2, ETYPE_INFO, AP_REP, EncAPRepPart
+    ETYPE_INFO2, ETYPE_INFO, AP_REP, EncAPRepPart, KERB_SUPERSEDED_BY_USER
 from impacket.krb5.types import KerberosTime, Principal, Ticket
 from impacket.krb5.gssapi import CheckSumField, GSS_C_DCE_STYLE, GSS_C_MUTUAL_FLAG, GSS_C_REPLAY_FLAG, \
     GSS_C_SEQUENCE_FLAG, GSS_C_CONF_FLAG, GSS_C_INTEG_FLAG
@@ -153,7 +155,7 @@ def getKerberosTGT(clientName, password, domain, lmhash, nthash, aesKey='', kdcH
 
     reqBody['realm'] = domain
 
-    now = datetime.datetime.utcnow() + datetime.timedelta(days=1)
+    now = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1)
     reqBody['till'] = KerberosTime.to_asn1(now)
     reqBody['rtime'] = KerberosTime.to_asn1(now)
     reqBody['nonce'] =  rand.getrandbits(31)
@@ -231,7 +233,7 @@ def getKerberosTGT(clientName, password, domain, lmhash, nthash, aesKey='', kdcH
                 except PyAsn1Error:
                     salt = ''
 
-                encryptionTypesData[etype2['etype']] = b(salt)
+                encryptionTypesData[etype2['etype']] = salt.encode('utf-8')
         elif method['padata-type'] == constants.PreAuthenticationDataTypes.PA_ETYPE_INFO.value:
             etypes = decoder.decode(method['padata-value'], asn1Spec = ETYPE_INFO())[0]
             for etype in etypes:
@@ -243,7 +245,7 @@ def getKerberosTGT(clientName, password, domain, lmhash, nthash, aesKey='', kdcH
                 except PyAsn1Error:
                     salt = ''
 
-                encryptionTypesData[etype['etype']] = b(salt)
+                encryptionTypesData[etype['etype']] = salt.encode('utf-8')
 
     enctype = supportedCiphers[0]
 
@@ -264,7 +266,7 @@ def getKerberosTGT(clientName, password, domain, lmhash, nthash, aesKey='', kdcH
         # Let's build the timestamp
         timeStamp = PA_ENC_TS_ENC()
 
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(datetime.timezone.utc)
         timeStamp['patimestamp'] = KerberosTime.to_asn1(now)
         timeStamp['pausec'] = now.microsecond
 
@@ -310,7 +312,7 @@ def getKerberosTGT(clientName, password, domain, lmhash, nthash, aesKey='', kdcH
 
         reqBody['realm'] =  domain
 
-        now = datetime.datetime.utcnow() + datetime.timedelta(days=1)
+        now = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1)
         reqBody['till'] = KerberosTime.to_asn1(now)
         reqBody['rtime'] =  KerberosTime.to_asn1(now)
         reqBody['nonce'] = rand.getrandbits(31)
@@ -364,7 +366,7 @@ def getKerberosTGT(clientName, password, domain, lmhash, nthash, aesKey='', kdcH
 
     return tgt, cipher, key, sessionKey
 
-def getKerberosTGS(serverName, domain, kdcHost, tgt, cipher, sessionKey):
+def getKerberosTGS(serverName, domain, kdcHost, tgt, cipher, sessionKey, renew = False):
 
     # Decode the TGT
     try:
@@ -394,7 +396,7 @@ def getKerberosTGS(serverName, domain, kdcHost, tgt, cipher, sessionKey):
 
     seq_set(authenticator, 'cname', clientName.components_to_asn1)
 
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.timezone.utc)
     authenticator['cusec'] =  now.microsecond
     authenticator['ctime'] = KerberosTime.to_asn1(now)
 
@@ -429,11 +431,14 @@ def getKerberosTGS(serverName, domain, kdcHost, tgt, cipher, sessionKey):
     opts.append( constants.KDCOptions.renewable_ok.value )
     opts.append( constants.KDCOptions.canonicalize.value )
 
+    if renew == True:
+        opts.append( constants.KDCOptions.renew.value )
+
     reqBody['kdc-options'] = constants.encodeFlags(opts)
     seq_set(reqBody, 'sname', serverName.components_to_asn1)
     reqBody['realm'] = domain
 
-    now = datetime.datetime.utcnow() + datetime.timedelta(days=1)
+    now = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1)
 
     reqBody['till'] = KerberosTime.to_asn1(now)
     reqBody['nonce'] = rand.getrandbits(31)
@@ -514,7 +519,7 @@ def getKerberosType3(cipher, sessionKey, auth_data):
     encAPRepPart['subkey'].clear()
     encAPRepPart = encAPRepPart.clone()
 
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.timezone.utc)
     encAPRepPart['cusec'] = now.microsecond
     encAPRepPart['ctime'] = KerberosTime.to_asn1(now)
     encAPRepPart['seq-number'] = sequenceNumber
@@ -640,7 +645,7 @@ def getKerberosType1(username, password, domain, lmhash, nthash, aesKey='', TGT 
     authenticator['authenticator-vno'] = 5
     authenticator['crealm'] = domain
     seq_set(authenticator, 'cname', userName.components_to_asn1)
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.timezone.utc)
 
     authenticator['cusec'] = now.microsecond
     authenticator['ctime'] = KerberosTime.to_asn1(now)
@@ -728,7 +733,17 @@ class KerberosError(SessionError):
                     retString += '\nNT ERROR: code: 0x%x - %s - %s' % (nt_error, error_msg_short, error_msg_verbose)
                 else:
                     retString += '\nNT ERROR: unknown error code: 0x%x' % nt_error
-        except:
+            
+            elif self.error == constants.ErrorCodes.KDC_ERR_CLIENT_REVOKED.value:
+                try:
+                    eData, _ = decoder.decode(self.packet['e-data'].asOctets())
+                    octet_string = eData[0][1].asOctets()
+                    superseded, _ = decoder.decode(octet_string, asn1Spec=KERB_SUPERSEDED_BY_USER())
+                    name = superseded['name']['name-string'][0].prettyPrint()
+                    retString += f". Account is superseded by {name}"
+                except Exception:
+                    pass
+        except Exception:
             pass
 
         return retString

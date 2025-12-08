@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 # Impacket - Collection of Python classes for working with network protocols.
 #
-# Copyright (C) 2023 Fortra. All rights reserved.
+# Copyright Fortra, LLC and its affiliated companies 
+#
+# All rights reserved.
 #
 # This software is provided under a slightly modified version
 # of the Apache Software License. See the accompanying LICENSE file
@@ -115,6 +117,18 @@ class Test_simple_aligned4(Test_simple):
     alignment = 4
     hexData = '00003131 00000005 03341234 12770099 88414141 41000000 686f6c61 00000000 68006f00 6c006100 00000000 434f4341 00060000 434f4341 3a313233 343a0000 45444342 00001006'
 
+class Test_unicode_with_embedded_null(_StructureTest, unittest.TestCase):
+    class theClass(Structure):
+        structure = (
+            ('utf16', 'u'),
+        )
+
+    def populate(self, a):
+        # Use a character whose low byte is 0x00 (U+0400) following an ASCII char.
+        # Older calcUnpackSize logic stopped at the odd-offset 0x00 0x00 pair between chars.
+        a['utf16'] = 'A\u0400'.encode('utf_16_le')
+
+    hexData = '41000004 0000'
 
 class Test_nested(_StructureTest, unittest.TestCase):
     class theClass(Structure):

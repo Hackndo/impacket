@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 # Impacket - Collection of Python classes for working with network protocols.
 #
-# Copyright (C) 2023 Fortra. All rights reserved.
+# Copyright Fortra, LLC and its affiliated companies 
+#
+# All rights reserved.
 #
 # This software is provided under a slightly modified version
 # of the Apache Software License. See the accompanying LICENSE file
@@ -215,7 +217,7 @@ def activeConnectionsWatcher(server):
             server.activeRelays[target][port] = {}
 
         if (userName in server.activeRelays[target][port]) is not True:
-            LOG.info('SOCKS: Adding %s@%s(%s) to active SOCKS connection. Enjoy' % (userName, target, port))
+            LOG.info('SOCKS: Adding %s://%s@%s(%s) [%s] to active SOCKS connection. Enjoy' % (scheme, userName, target, port, client.client_id))
             server.activeRelays[target][port][userName] = {}
             # This is the protocolClient. Needed because we need to access the killConnection from time to time.
             # Inside this instance, you have the session attribute pointing to the relayed session.
@@ -265,9 +267,10 @@ def webService(addr, port):
                 for port in server.activeRelays[target]:
                     for user in server.activeRelays[target][port]:
                         if user != 'data' and user != 'scheme':
+                            client_id = server.activeRelays[target][port][user]['protocolClient'].client_id
                             protocol = server.activeRelays[target][port]['scheme']
                             isAdmin = server.activeRelays[target][port][user]['isAdmin']
-                            relays.append([protocol, target, user, isAdmin, str(port)])
+                            relays.append([protocol, target, user, isAdmin, str(port), str(client_id)])
             return jsonify(relays)
 
         @app.route('/ntlmrelayx/api/v1.0/relays', methods=['GET'])
@@ -323,8 +326,8 @@ class SocksRequestHandler(socketserver.BaseRequestHandler):
                 self.targetHost = socket.inet_ntoa(request['PAYLOAD'][:4])
                 self.targetPort = unpack('>H',request['PAYLOAD'][4:])[0]
             elif request['ATYP'] == ATYP.DOMAINNAME.value:
-                hostLength = unpack('!B',request['PAYLOAD'][0])[0]
-                self.targetHost = request['PAYLOAD'][1:hostLength+1]
+                hostLength = unpack('!B',request['PAYLOAD'][:1])[0]
+                self.targetHost = request['PAYLOAD'][1:hostLength+1].decode(encoding='utf-8')
                 self.targetPort = unpack('>H',request['PAYLOAD'][hostLength+1:])[0]
             else:
                 LOG.error('No support for IPv6 yet!')
