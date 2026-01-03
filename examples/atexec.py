@@ -117,8 +117,8 @@ class TSCH_EXEC:
         if self.sessionId is not None:
             cmd, args = cmd_split(self.__command)
         else:
-            cmd = "cmd.exe"
-            args = "/C %s > %%windir%%\\Temp\\%s 2>&1" % (self.__command, tmpFileName)
+            cmd = "powershell.exe"
+            args = "start-Process -FilePath cmd.exe -ArgumentList @('/c','%s > %%windir%%\\Temp\\%s 2>&1')" % (self.__command, tmpFileName)
 
         xml = """<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
