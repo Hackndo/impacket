@@ -31,6 +31,7 @@ import random
 import logging
 
 from impacket.examples import logger
+from impacket.examples.name_generators import TaskNameGenerator, FileNameGenerator
 from impacket import version
 from impacket.dcerpc.v5 import tsch, transport
 from impacket.dcerpc.v5.dtypes import NULL
@@ -111,8 +112,8 @@ class TSCH_EXEC:
         dce.connect()
         dce.set_auth_level(RPC_C_AUTHN_LEVEL_PKT_PRIVACY)
         dce.bind(tsch.MSRPC_UUID_TSCHS)
-        tmpName = ''.join([random.choice(string.ascii_letters) for _ in range(5)])
-        tmpFileName = tmpName + '.log'
+        tmpName = TaskNameGenerator.generate()
+        tmpFileName = FileNameGenerator.generate_log()
 
         if self.sessionId is not None:
             cmd, args = cmd_split(self.__command)
@@ -165,10 +166,26 @@ class TSCH_EXEC:
         """ % ((xml_escape(cmd) if self.__silentCommand is False else self.__command.split()[0]), 
             (xml_escape(args) if self.__silentCommand is False else " ".join(self.__command.split()[1:])))
         taskCreated = False
+
+        # Try to create task, retry with new name if task already exists
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                logging.info('Creating task \\%s' % tmpName)
+                tsch.hSchRpcRegisterTask(dce, '\\%s' % tmpName, xml, tsch.TASK_CREATE, NULL, tsch.TASK_LOGON_NONE)
+                taskCreated = True
+                break  # Success, exit retry loop
+            except Exception as e:
+                # Check if task already exists (ERROR_ALREADY_EXISTS = 0xb7)
+                if 'ERROR_ALREADY_EXISTS' in str(e) and attempt < max_retries - 1:
+                    # Generate new task name and retry
+                    tmpName = TaskNameGenerator.generate()
+                    logging.debug(f'Task name collision, retrying with: {tmpName}')
+                    continue
+                else:
+                    raise  # Re-raise if not a collision or max retries reached
+
         try:
-            logging.info('Creating task \\%s' % tmpName)
-            tsch.hSchRpcRegisterTask(dce, '\\%s' % tmpName, xml, tsch.TASK_CREATE, NULL, tsch.TASK_LOGON_NONE)
-            taskCreated = True
 
             logging.info('Running task \\%s' % tmpName)
             done = False

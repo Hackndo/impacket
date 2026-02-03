@@ -52,14 +52,15 @@ from base64 import b64encode
 
 from impacket.examples import logger
 from impacket.examples.utils import parse_target
+from impacket.examples.name_generators import ServiceNameGenerator, FileNameGenerator, ShareNameGenerator
 from impacket import version, smbserver
 from impacket.dcerpc.v5 import transport, scmr
 from impacket.krb5.keytab import Keytab
 
 
-OUTPUT_FILENAME = ''.join([random.choice(string.ascii_letters) for _ in range(5)])
-SMBSERVER_DIR   = '__tmp'
-DUMMY_SHARE     = 'TMP'
+OUTPUT_FILENAME = FileNameGenerator.generate_log()
+SMBSERVER_DIR   = ShareNameGenerator.generate_directory()
+DUMMY_SHARE     = ShareNameGenerator.generate_share()
 CODEC = sys.stdout.encoding
 
 class SMBServer(Thread):
@@ -137,7 +138,7 @@ class CMDEXEC:
             self.__lmhash, self.__nthash = hashes.split(':')
 
         if serviceName is None:
-            self.__serviceName = ''.join([random.choice(string.ascii_letters) for i in range(5)])
+            self.__serviceName = ServiceNameGenerator.generate()
         else:
             self.__serviceName = serviceName
 
@@ -282,7 +283,7 @@ class RemoteShell(cmd.Cmd):
             data = '$ProgressPreference="SilentlyContinue";' + data
             data = self.__pwsh + b64encode(data.encode('utf-16le')).decode()
 
-        batchFile = '%WINDIR%\\Temp\\' + ''.join([random.choice(string.ascii_letters) for _ in range(5)]) + '.bat'
+        batchFile = '%WINDIR%\\Temp\\' + FileNameGenerator.generate_batch()
                 
         command = self.__shell + 'echo ' + data + ' ^> %WINDIR%\\Temp\\' + OUTPUT_FILENAME + ' 2^>^&1  > ' + batchFile + ' & ' + \
                   self.__shell + batchFile
@@ -292,9 +293,30 @@ class RemoteShell(cmd.Cmd):
         command += ' & ' + 'del ' + batchFile
 
         logging.debug('Executing %s' % command)
-        resp = scmr.hRCreateServiceW(self.__scmr, self.__scHandle, self.__serviceName, self.__serviceName,
-                                     lpBinaryPathName=command, dwStartType=scmr.SERVICE_DEMAND_START)
-        service = resp['lpServiceHandle']
+
+        # Try to create service, retry with new name if service already exists
+        max_retries = 5
+        service = None
+        for attempt in range(max_retries):
+            try:
+                resp = scmr.hRCreateServiceW(self.__scmr, self.__scHandle, self.__serviceName, self.__serviceName,
+                                             lpBinaryPathName=command, dwStartType=scmr.SERVICE_DEMAND_START)
+                service = resp['lpServiceHandle']
+                break  # Success, exit retry loop
+            except Exception as e:
+                # Check if service already exists (ERROR_SERVICE_EXISTS = 0x431)
+                error_code = getattr(e, 'error_code', None)
+                if error_code == 0x00000431 and attempt < max_retries - 1:
+                    # Generate new service name and retry
+                    self.__serviceName = ServiceNameGenerator.generate()
+                    logging.debug(f'Service name collision, retrying with: {self.__serviceName}')
+                    continue
+                else:
+                    raise  # Re-raise if not a collision or max retries reached
+
+        if service is None:
+            raise Exception("Failed to create service after multiple attempts")
+
         try:
            scmr.hRStartServiceW(self.__scmr, service)
         except Exception as e:

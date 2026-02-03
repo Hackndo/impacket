@@ -32,6 +32,7 @@ import time
 from six import PY3
 
 from impacket.examples import logger
+from impacket.examples.name_generators import ServiceNameGenerator
 from impacket import version, smb
 from impacket.smbconnection import SMBConnection
 from impacket.dcerpc.v5 import transport
@@ -167,7 +168,9 @@ class PSEXEC:
             packet = RemComMessage()
             pid = os.getpid()
 
-            packet['Machine'] = ''.join([random.choice(string.ascii_letters) for _ in range(4)])
+            # Generate a plausible machine identifier (4-8 characters alphanumeric)
+            machine_id = ''.join([random.choice(string.ascii_uppercase + string.digits) for _ in range(random.randint(4, 8))])
+            packet['Machine'] = machine_id
             if self.__path is not None:
                 packet['WorkingDir'] = self.__path
             packet['Command'] = self.__command
