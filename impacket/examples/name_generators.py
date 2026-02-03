@@ -164,6 +164,88 @@ class ShareNameGenerator:
         return f'__{prefix}{suffix}'
 
 
+class PathGenerator:
+    """Generates alternative paths based on share selection for stealth"""
+
+    # Primary paths by priority (stealth level) with weights
+    # Higher weight = more likely to be selected (prefer stealthy paths)
+    # Fallback paths are NOT included here - only used if primary paths fail
+    PATHS_BY_SHARE = {
+        'C$': [
+            # Priority 1 - Stealth Maximum (tested 2024, bypass Defender)
+            ('Users\\Public\\Downloads\\', 95),      # Very stealthy - lots of legitimate activity
+            ('ProgramData\\', 90),                    # Stealthy - used by many applications
+
+            # Priority 2 - Stealth Medium
+            ('Windows\\Logs\\', 70),                  # Moderate - logs directory seems legitimate
+            ('Windows\\Debug\\', 65),                 # Moderate - rarely scanned
+            ('Temp\\', 50),                           # If C:\Temp exists (not always present)
+        ],
+        'ADMIN$': [
+            # ADMIN$ points to %SystemRoot% = C:\Windows
+            # All paths are relative to C:\Windows
+
+            # Priority 1 - Best options for ADMIN$
+            ('Logs\\', 80),                           # Moderate detection - logs directory
+            ('Debug\\', 75),                          # Moderate detection - debug directory
+        ]
+    }
+
+    # Fallback paths - ONLY used if all primary paths fail (highly monitored)
+    FALLBACK_PATHS = {
+        'C$': 'Windows\\Temp\\',      # Last resort for C$
+        'ADMIN$': 'Temp\\',            # Last resort for ADMIN$
+    }
+
+    @staticmethod
+    def get_path_for_share(share_name, weighted=True):
+        """Get appropriate path based on share selection
+
+        Args:
+            share_name: Share name (e.g., 'C$', 'ADMIN$')
+            weighted: If True, use weighted random (prefer stealthy paths)
+                     If False, return highest priority path
+
+        Returns:
+            Path string without leading backslash (e.g., 'Users\\Public\\Downloads\\')
+        """
+        # Normalize share name
+        share_upper = share_name.upper()
+        if not share_upper.endswith('$'):
+            share_upper += '$'
+
+        if share_upper not in PathGenerator.PATHS_BY_SHARE:
+            # Unknown share, return fallback if available
+            return PathGenerator.FALLBACK_PATHS.get(share_upper, 'Temp\\')
+
+        paths_with_weights = PathGenerator.PATHS_BY_SHARE[share_upper]
+
+        if not weighted:
+            # Return highest priority (first in list)
+            return paths_with_weights[0][0]
+
+        # Weighted random selection (prefer stealthy paths)
+        paths, weights = zip(*paths_with_weights)
+        return random.choices(paths, weights=weights)[0]
+
+    @staticmethod
+    def get_fallback_path(share_name):
+        """Get fallback path for share (only use if primary paths fail)
+
+        Args:
+            share_name: Share name (e.g., 'C$', 'ADMIN$')
+
+        Returns:
+            Fallback path string (highly monitored location)
+        """
+        # Normalize share name
+        share_upper = share_name.upper()
+        if not share_upper.endswith('$'):
+            share_upper += '$'
+
+        return PathGenerator.FALLBACK_PATHS.get(share_upper, 'Temp\\')
+
+
 class TaskSchedulerGenerator:
     """Generates plausible Windows Task Scheduler configuration values"""
 
