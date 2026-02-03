@@ -135,16 +135,16 @@ class TSCH_EXEC:
         # Generate paths based on share selection for stealth
         if self.__share.upper() == 'ADMIN$':
             # ADMIN$ points to %SystemRoot% = C:\Windows
-            base_env = '%%windir%%'
+            base_env = '%windir%'
         elif self.__share.upper() == 'C$':
             # C$ points to C:\ root
             base_env = 'C:'
         else:
             # Generic fallback
-            base_env = '%%windir%%'
+            base_env = '%windir%'
 
         # Construct output path using dynamic base + selected path
-        output_path = base_env + '\\' + self.__base_path.replace('\\', '\\\\')  # Escape backslashes for PowerShell
+        output_path = base_env + '\\' + self.__base_path
 
         if self.sessionId is not None:
             cmd, args = cmd_split(self.__command)
