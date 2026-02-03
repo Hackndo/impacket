@@ -208,7 +208,12 @@ class RemoteShell(cmd.Cmd):
         resp = scmr.hROpenSCManagerW(self.__scmr)
         self.__scHandle = resp['lpScHandle']
         self.transferClient = rpc.get_smb_connection()
-        self.do_cd('')
+
+        # Initialize prompt without remote command execution (eliminates "echo cd" IOC)
+        # Note: smbexec does not support 'cd' command anyway (see do_cd() error message)
+        self.prompt = 'C:\\Windows\\System32>'
+        if self.__shell_type == 'powershell':
+            self.prompt = 'PS C:\\Windows\\System32> '
 
     def finish(self):        
         # Just in case the ouput file is still in the share
