@@ -31,7 +31,7 @@ import random
 import logging
 
 from impacket.examples import logger
-from impacket.examples.name_generators import TaskNameGenerator, FileNameGenerator, TaskSchedulerGenerator
+from impacket.examples.name_generators import TaskNameGenerator, FileNameGenerator, TaskSchedulerGenerator, PathGenerator
 from impacket import version
 from impacket.dcerpc.v5 import tsch, transport
 from impacket.dcerpc.v5.dtypes import NULL
@@ -45,7 +45,7 @@ CODEC = sys.stdout.encoding
 
 class TSCH_EXEC:
     def __init__(self, username='', password='', domain='', hashes=None, aesKey=None, doKerberos=False, kdcHost=None,
-                 command=None, sessionId=None, silentCommand=False):
+                 command=None, sessionId=None, silentCommand=False, share='ADMIN$'):
         self.__username = username
         self.__password = password
         self.__domain = domain
@@ -57,6 +57,20 @@ class TSCH_EXEC:
         self.__command = command
         self.__silentCommand = silentCommand
         self.sessionId = sessionId
+        self.__share = share
+
+        # Get appropriate path based on share selection (stealth optimization)
+        self.__base_path = PathGenerator.get_path_for_share(self.__share, weighted=True)
+
+        # Log path selection when debug mode is enabled
+        logging.debug(f'Share: {self.__share} | Selected path: {self.__base_path}')
+        if self.__share.upper() == 'C$':
+            full_path = 'C:\\' + self.__base_path
+        elif self.__share.upper() == 'ADMIN$':
+            full_path = 'C:\\Windows\\' + self.__base_path
+        else:
+            full_path = self.__base_path
+        logging.debug(f'Full path on target: {full_path}')
 
         if hashes is not None:
             self.__lmhash, self.__nthash = hashes.split(':')
@@ -118,11 +132,25 @@ class TSCH_EXEC:
         # Generate randomized task scheduler values to avoid detection signatures
         task_config = TaskSchedulerGenerator.generate_all()
 
+        # Generate paths based on share selection for stealth
+        if self.__share.upper() == 'ADMIN$':
+            # ADMIN$ points to %SystemRoot% = C:\Windows
+            base_env = '%%windir%%'
+        elif self.__share.upper() == 'C$':
+            # C$ points to C:\ root
+            base_env = 'C:'
+        else:
+            # Generic fallback
+            base_env = '%%windir%%'
+
+        # Construct output path using dynamic base + selected path
+        output_path = base_env + '\\' + self.__base_path.replace('\\', '\\\\')  # Escape backslashes for PowerShell
+
         if self.sessionId is not None:
             cmd, args = cmd_split(self.__command)
         else:
             cmd = "powershell.exe"
-            args = "start-Process -FilePath cmd.exe -ArgumentList @('/c,','%s > %%windir%%\\Temp\\%s 2>&1')" % (self.__command, tmpFileName)
+            args = "start-Process -FilePath cmd.exe -ArgumentList @('/c,','%s > %s%s 2>&1')" % (self.__command, output_path, tmpFileName)
 
         xml = """<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
@@ -237,10 +265,11 @@ class TSCH_EXEC:
 
         smbConnection = rpctransport.get_smb_connection()
         waitOnce = True
+        remote_path = self.__base_path + tmpFileName
         while True:
             try:
-                logging.info('Attempting to read ADMIN$\\Temp\\%s' % tmpFileName)
-                smbConnection.getFile('ADMIN$', 'Temp\\%s' % tmpFileName, output_callback)
+                logging.info('Attempting to read %s\\%s' % (self.__share, remote_path))
+                smbConnection.getFile(self.__share, remote_path, output_callback)
                 break
             except Exception as e:
                 if str(e).find('SHARING') > 0:
@@ -254,8 +283,8 @@ class TSCH_EXEC:
                         raise
                 else:
                     raise
-        logging.debug('Deleting file ADMIN$\\Temp\\%s' % tmpFileName)
-        smbConnection.deleteFile('ADMIN$', 'Temp\\%s' % tmpFileName)
+        logging.debug('Deleting file %s\\%s' % (self.__share, remote_path))
+        smbConnection.deleteFile(self.__share, remote_path)
 
         dce.disconnect()
 
@@ -278,6 +307,8 @@ if __name__ == '__main__':
                                                        'map the result with '
                           'https://docs.python.org/3/library/codecs.html#standard-encodings and then execute wmiexec.py '
                           'again with -codec and the corresponding codec ' % CODEC)
+    parser.add_argument('-share', action='store', default='ADMIN$', help='share where the output will be grabbed from '
+                        '(default ADMIN$). Use C$ for stealth with alternative paths.')
 
     group = parser.add_argument_group('authentication')
 
@@ -331,5 +362,5 @@ if __name__ == '__main__':
         options.k = True
 
     atsvc_exec = TSCH_EXEC(username, password, domain, options.hashes, options.aesKey, options.k, options.dc_ip,
-                           ' '.join(options.command), options.session_id, options.silentcommand)
+                           ' '.join(options.command), options.session_id, options.silentcommand, options.share)
     atsvc_exec.play(address)
